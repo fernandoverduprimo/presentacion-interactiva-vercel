@@ -1,0 +1,5 @@
+{
+  "name": "Interactive Classroom Presentations",
+  "description": "An interactive presentation tool where professors can engage students with live quizzes. Students follow along on their devices, answer questions in real-time, and results are instantly displayed to the class.",
+  "requestFramePermissions": []
+}
