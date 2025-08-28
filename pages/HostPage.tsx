@@ -42,18 +42,26 @@ const HostPage: React.FC = () => {
   }, [sessionCode, navigate]);
 
   const fetchAnswers = useCallback(async (sessionId: string) => {
-    // FIX: The original query `select('*, profiles(full_name)')` was incorrect as there's no direct foreign key from `answers` to `profiles`.
-    // The corrected query `select('*, profiles!user_id(*)')` tells Supabase to join `profiles` on `answers.user_id = profiles.id`, fetching all profile fields.
+    // FIX: The original query `select('*, profiles!user_id(*)')` is not correctly typed by the Supabase client
+    // because `user_id` is a foreign key to `users`, not `profiles`, creating ambiguity.
+    // The corrected query below joins through the `users` table to get the related `profiles` data,
+    // and then maps the nested result to the flat structure required by the application.
     const { data, error } = await supabase
       .from('answers')
-      .select('*, profiles!user_id(*)')
+      .select('*, users(*, profiles(*))')
       .eq('session_id', sessionId)
       .eq('question_index', currentSlideIndex);
       
     if (error) {
         console.error('Error fetching answers:', error);
-    } else {
-        setAnswers(data as AnswerWithProfile[]);
+    } else if (data) {
+      // The query returns a nested structure: { ..., users: { profiles: { ... } } }
+      // We map it to the expected flat structure: { ..., profiles: { ... } }
+      const answersWithProfiles = (data as any[]).map(({ users, ...answer }) => ({
+        ...answer,
+        profiles: users?.profiles ?? null,
+      }));
+      setAnswers(answersWithProfiles);
     }
   }, [currentSlideIndex]);
 
