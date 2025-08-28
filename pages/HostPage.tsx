@@ -27,16 +27,23 @@ const HostPage: React.FC = () => {
 
   const fetchSession = useCallback(async () => {
     if (!sessionCode) return;
-    const { data, error } = await supabase
-      .from('sessions')
-      .select('*')
-      .eq('session_code', sessionCode)
-      .single();
-    if (error || !data) {
-      console.error('Error fetching session:', error);
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('sessions')
+        .select('*')
+        .eq('session_code', sessionCode)
+        .single();
+      if (error || !data) {
+        console.error('Error fetching session:', error);
+        navigate('/not-found');
+      } else {
+        setSession(data);
+      }
+    } catch (e) {
+      console.error('Exception fetching session:', e);
       navigate('/not-found');
-    } else {
-      setSession(data);
+    } finally {
       setLoading(false);
     }
   }, [sessionCode, navigate]);
@@ -69,10 +76,10 @@ const HostPage: React.FC = () => {
     }
   }, [session, fetchAnswers, currentSlideIndex]);
 
+  // Subscribe to session updates to keep the slide index synchronized
   useEffect(() => {
-    if (!session) return;
+    if (!session?.id) return;
 
-    // Subscribe to session updates to keep the slide index synchronized
     const sessionChannel = supabase
       .channel(`session-host:${session.id}`)
       .on<Session>(
@@ -89,9 +96,17 @@ const HostPage: React.FC = () => {
       )
       .subscribe();
       
-    // Subscribe to new answers for the current question
+    return () => {
+      supabase.removeChannel(sessionChannel);
+    };
+  }, [session?.id]);
+      
+  // Subscribe to new answers for the current question
+  useEffect(() => {
+    if (!session?.id) return;
+
     const answersChannel = supabase
-      .channel(`answers:${session.id}`)
+      .channel(`answers:${session.id}:${currentSlideIndex}`)
       .on<Answer>(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'answers', filter: `session_id=eq.${session.id}` },
@@ -106,15 +121,13 @@ const HostPage: React.FC = () => {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(sessionChannel);
       supabase.removeChannel(answersChannel);
     };
-  }, [session, currentSlideIndex]);
+  }, [session?.id, currentSlideIndex]);
   
   const updateSlideIndex = async (newIndex: number) => {
     if (!session || newIndex < 0 || newIndex >= PRESENTATION_SLIDES.length) return;
     
-    // Clear answers immediately for better UX
     setAnswers([]); 
 
     const { error } = await supabase
@@ -124,10 +137,8 @@ const HostPage: React.FC = () => {
       
     if (error) {
       console.error('Error updating slide:', error);
-      // If the update fails, refetch the answers for the current slide
       fetchAnswers(session.id);
     }
-    // The UI will update automatically via the real-time subscription
   };
 
   if (loading) {

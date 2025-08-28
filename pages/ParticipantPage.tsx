@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabase';
@@ -28,19 +27,25 @@ const ParticipantPage: React.FC = () => {
   const fetchSessionData = useCallback(async () => {
     if (!sessionCode) return;
     setLoading(true);
-    const { data, error } = await supabase
-      .from('sessions')
-      .select('*')
-      .eq('session_code', sessionCode)
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from('sessions')
+        .select('*')
+        .eq('session_code', sessionCode)
+        .single();
 
-    if (error || !data) {
-      console.error('Error fetching session:', error);
+      if (error || !data) {
+        console.error('Error fetching session:', error);
+        navigate('/not-found');
+      } else {
+        setSession(data);
+      }
+    } catch (e) {
+      console.error('Exception fetching session data:', e);
       navigate('/not-found');
-    } else {
-      setSession(data);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [sessionCode, navigate]);
 
   const fetchUserAnswers = useCallback(async (sessionId: string, userId: string) => {
