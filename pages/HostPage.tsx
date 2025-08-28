@@ -42,10 +42,6 @@ const HostPage: React.FC = () => {
   }, [sessionCode, navigate]);
 
   const fetchAnswers = useCallback(async (sessionId: string) => {
-    // FIX: The original query `select('*, profiles!user_id(*)')` is not correctly typed by the Supabase client
-    // because `user_id` is a foreign key to `users`, not `profiles`, creating ambiguity.
-    // The corrected query below joins through the `users` table to get the related `profiles` data,
-    // and then maps the nested result to the flat structure required by the application.
     const { data, error } = await supabase
       .from('answers')
       .select('*, users(*, profiles(*))')
@@ -55,8 +51,6 @@ const HostPage: React.FC = () => {
     if (error) {
         console.error('Error fetching answers:', error);
     } else if (data) {
-      // The query returns a nested structure: { ..., users: { profiles: { ... } } }
-      // We map it to the expected flat structure: { ..., profiles: { ... } }
       const answersWithProfiles = (data as any[]).map(({ users, ...answer }) => ({
         ...answer,
         profiles: users?.profiles ?? null,
@@ -78,7 +72,25 @@ const HostPage: React.FC = () => {
   useEffect(() => {
     if (!session) return;
 
-    const channel = supabase
+    // Subscribe to session updates to keep the slide index synchronized
+    const sessionChannel = supabase
+      .channel(`session-host:${session.id}`)
+      .on<Session>(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'sessions',
+          filter: `id=eq.${session.id}`,
+        },
+        (payload) => {
+          setSession(payload.new as Session);
+        }
+      )
+      .subscribe();
+      
+    // Subscribe to new answers for the current question
+    const answersChannel = supabase
       .channel(`answers:${session.id}`)
       .on<Answer>(
         'postgres_changes',
@@ -86,9 +98,6 @@ const HostPage: React.FC = () => {
         async (payload) => {
           const newAnswer = payload.new as Answer;
           if (newAnswer.question_index === currentSlideIndex) {
-            // FIX: The original query `select('full_name')` did not fetch the `id` field from the profiles table.
-            // This caused a type error because the `Profile` type requires both `id` and `full_name`.
-            // Changed to `select('*')` to fetch the complete profile object.
             const { data: profile } = await supabase.from('profiles').select('*').eq('id', newAnswer.user_id).single();
             setAnswers(prev => [...prev, {...newAnswer, profiles: profile}]);
           }
@@ -97,22 +106,28 @@ const HostPage: React.FC = () => {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(sessionChannel);
+      supabase.removeChannel(answersChannel);
     };
   }, [session, currentSlideIndex]);
   
   const updateSlideIndex = async (newIndex: number) => {
     if (!session || newIndex < 0 || newIndex >= PRESENTATION_SLIDES.length) return;
+    
+    // Clear answers immediately for better UX
+    setAnswers([]); 
+
     const { error } = await supabase
       .from('sessions')
       .update({ current_question_index: newIndex })
       .eq('id', session.id);
+      
     if (error) {
       console.error('Error updating slide:', error);
-    } else {
-      setSession(prev => prev ? { ...prev, current_question_index: newIndex } : null);
-      setAnswers([]); // Clear answers for the new slide
+      // If the update fails, refetch the answers for the current slide
+      fetchAnswers(session.id);
     }
+    // The UI will update automatically via the real-time subscription
   };
 
   if (loading) {
