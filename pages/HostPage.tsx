@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import { PRESENTATION_SLIDES } from '../lib/presentation';
@@ -24,6 +24,9 @@ const HostPage: React.FC = () => {
 
   const currentSlideIndex = session?.current_question_index ?? 0;
   const currentSlide = PRESENTATION_SLIDES[currentSlideIndex];
+  
+  const slideIndexRef = useRef(currentSlideIndex);
+  slideIndexRef.current = currentSlideIndex;
 
   const fetchSession = useCallback(async () => {
     if (!sessionCode) return;
@@ -48,12 +51,12 @@ const HostPage: React.FC = () => {
     }
   }, [sessionCode, navigate]);
 
-  const fetchAnswers = useCallback(async (sessionId: string) => {
+  const fetchAnswers = useCallback(async (sessionId: string, questionIndex: number) => {
     const { data, error } = await supabase
       .from('answers')
       .select('*, users(*, profiles(*))')
       .eq('session_id', sessionId)
-      .eq('question_index', currentSlideIndex);
+      .eq('question_index', questionIndex);
       
     if (error) {
         console.error('Error fetching answers:', error);
@@ -64,7 +67,7 @@ const HostPage: React.FC = () => {
       }));
       setAnswers(answersWithProfiles);
     }
-  }, [currentSlideIndex]);
+  }, []);
 
   useEffect(() => {
     fetchSession();
@@ -72,11 +75,10 @@ const HostPage: React.FC = () => {
   
   useEffect(() => {
     if (session) {
-      fetchAnswers(session.id);
+      fetchAnswers(session.id, currentSlideIndex);
     }
   }, [session, fetchAnswers, currentSlideIndex]);
 
-  // Subscribe to session updates to keep the slide index synchronized
   useEffect(() => {
     if (!session?.id) return;
 
@@ -96,23 +98,14 @@ const HostPage: React.FC = () => {
       )
       .subscribe();
       
-    return () => {
-      supabase.removeChannel(sessionChannel);
-    };
-  }, [session?.id]);
-      
-  // Subscribe to new answers for the current question
-  useEffect(() => {
-    if (!session?.id) return;
-
     const answersChannel = supabase
-      .channel(`answers:${session.id}:${currentSlideIndex}`)
+      .channel(`answers:${session.id}`)
       .on<Answer>(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'answers', filter: `session_id=eq.${session.id}` },
         async (payload) => {
           const newAnswer = payload.new as Answer;
-          if (newAnswer.question_index === currentSlideIndex) {
+          if (newAnswer.question_index === slideIndexRef.current) {
             const { data: profile } = await supabase.from('profiles').select('*').eq('id', newAnswer.user_id).single();
             setAnswers(prev => [...prev, {...newAnswer, profiles: profile}]);
           }
@@ -121,9 +114,10 @@ const HostPage: React.FC = () => {
       .subscribe();
 
     return () => {
+      supabase.removeChannel(sessionChannel);
       supabase.removeChannel(answersChannel);
     };
-  }, [session?.id, currentSlideIndex]);
+  }, [session?.id]);
   
   const updateSlideIndex = async (newIndex: number) => {
     if (!session || newIndex < 0 || newIndex >= PRESENTATION_SLIDES.length) return;
@@ -137,7 +131,7 @@ const HostPage: React.FC = () => {
       
     if (error) {
       console.error('Error updating slide:', error);
-      fetchAnswers(session.id);
+      fetchAnswers(session.id, newIndex);
     }
   };
 

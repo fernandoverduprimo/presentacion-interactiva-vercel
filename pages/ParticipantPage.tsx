@@ -125,9 +125,17 @@ const ParticipantPage: React.FC = () => {
     <div className="flex flex-col h-screen bg-gray-900">
       <header className="flex justify-between items-center p-4 bg-gray-800 shadow-md">
         <h1 className="text-xl font-bold text-indigo-400">Student View</h1>
-        <div className="text-right">
-          <p className="text-white">{profile?.full_name}</p>
-          <p className="text-xs text-gray-400">Session: {sessionCode}</p>
+        <div className="flex items-center space-x-4">
+            <div className="text-right">
+                <p className="text-white font-semibold">{profile?.full_name}</p>
+                <p className="text-xs text-gray-400">Session: {sessionCode}</p>
+            </div>
+            <button 
+                onClick={() => navigate('/')} 
+                className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200 text-sm"
+            >
+                Leave Session
+            </button>
         </div>
       </header>
 

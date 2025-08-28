@@ -1,10 +1,21 @@
-
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import AuthModal from '../components/AuthModal';
 import Loader from '../components/icons/Loader';
+
+const UserHeader: React.FC<{ fullName: string | null | undefined }> = ({ fullName }) => (
+  <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center bg-gray-900 bg-opacity-50">
+    <span className="text-gray-300">Welcome, {fullName || 'User'}</span>
+    <button
+      onClick={() => supabase.auth.signOut()}
+      className="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg text-sm transition-colors"
+    >
+      Sign Out
+    </button>
+  </div>
+);
 
 const HomePage: React.FC = () => {
   const [sessionCode, setSessionCode] = useState('');
@@ -13,7 +24,7 @@ const HomePage: React.FC = () => {
   const [error, setError] = useState('');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   
-  const { user, loading: authLoading } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   const handleCreateSession = async () => {
@@ -75,7 +86,8 @@ const HomePage: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 p-4">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 p-4 relative">
+       {user && <UserHeader fullName={profile?.full_name} />}
       <div className="text-center mb-12">
         <h1 className="text-5xl md:text-6xl font-extrabold text-white">
           Welcome to <span className="text-indigo-400">Interactive Classroom</span>
